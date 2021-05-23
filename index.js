@@ -116,7 +116,7 @@ function fetchCategories(callback) {
 var publishIndex = 1;
 function prepareNextPost() {
     console.log('Prepare next post...' + (publishIndex++))
-    
+
     //取出数据中的第一个元素，每一个元素代码对应一篇文章
     let line = itemsLine.shift();
     if (line == null) {
@@ -133,12 +133,12 @@ function prepareNextPost() {
  */
 function buildPost(item) {
     buildContent(item, function(content){
-        let post = {};
-        post.title = item.title;
-        post.categories = [categoriesMap.get(item.category)];
-        post.status = 'publish';
-        post.content = content;
-        publishPost(post);
+        publishPost({
+            title: item.title,
+            categories : [categoriesMap.get(item.category)],
+            status : 'publish',
+            content : content
+        });
     })
 }
 
