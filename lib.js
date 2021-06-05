@@ -1,4 +1,6 @@
-const WPAPI = require( 'wpapi' );
+const WPAPI = require('wpapi');
+const fs = require('fs');
+const { title } = require('process');
 
 // 文章内容模板
 const imageTemplate = '<img class="alignnone size-full" src="IMAGE_PLACEHOLDER" />';
@@ -14,8 +16,11 @@ const WP_ENDPOINT = "http://www.99jieshuo.com//wp-json";
 //网站已有分类
 var categoriesMap = new Map();
 
+//网站已有文章的所有标题
+var postTitlesSet = new Set();
 
-var wp = {}  //wp api实例
+
+var wp = {} //wp api实例
 var readyItems = [];
 /**
  * 创建WPAPI
@@ -42,29 +47,50 @@ function startPublish(items) {
 /**
  * 准备文章进行发布
  */
- var publishIndex = 1;
- function prepareNextPost() {
-     console.log('Prepare next post...' + (publishIndex++))
- 
-     //取出数据中的第一个元素，每一个元素代码对应一篇文章
-     let item = readyItems.shift();
-     if (line == null) {
-         console.log('No more post to be published.')
-         return;
-     }
-     publishPost(item, function(success) {
-        if (!success) {
-            console.log(item.title + " publish failed.");
-        }
+var publishIndex = 1;
+
+function prepareNextPost() {
+    console.log('Prepare next post...' + (publishIndex++))
+
+    //取出数据中的第一个元素，每一个元素代码对应一篇文章
+    let item = readyItems.shift();
+    if (item == null) {
+        console.log('No more post to be published.')
+        return;
+    }
+    if (postTitlesSet.has(item.title)) {
+        console.log('Post already published, slip.');
         prepareNextPost();
-     });
- }
+        return;
+    }
+    let zipFile = 'zips/' + item.title + '.zip';
+    if (!fs.existsSync(zipFile)) {
+        console.log('Post local zip not found, slip.');
+        prepareNextPost();
+        return;
+    }
+    publishMedia(zipFile, function(url){
+        if (url == '') {
+            console.log('zipFile upload failed, skip.');
+            prepareNextPost();
+            return;
+        }
+        item.fileUrl = url;
+        publishPost(item, function (success) {
+            if (!success) {
+                console.log(item.title + " publish failed.");
+            }
+            prepareNextPost();
+        });
+    })
+    
+}
 
 function publishPost(item, callback) {
-    if (categoriesMap.length > 0) {
+    if (categoriesMap.size > 0) {
         publishPostInternal(buildPost(item), callback);
     } else {
-        fetchCategories(function(){
+        fetchCategories(function () {
             publishPostInternal(buildPost(item), callback);
         });
     }
@@ -74,14 +100,14 @@ function publishPost(item, callback) {
  * 获取所有分类，添加到map中
  * @param {*} callback 
  */
- function fetchCategories(callback) {
+function fetchCategories(callback) {
     console.log('Fetching categories...')
-    wp.categories().then(function(data){
-        data.forEach(function(item){
+    wp.categories().then(function (data) {
+        data.forEach(function (item) {
             categoriesMap.set(item.name, item.id);
         })
         callback();
-    }).catch(function(error){
+    }).catch(function (error) {
         console.log(error.message);
         process.exit(1);
     });
@@ -92,20 +118,45 @@ function publishPost(item, callback) {
  * @param {*} item 
  */
 function buildPost(item) {
-        post = {
-            title: item.title,
-            categories: [categoriesMap.get(item.category)],
-            status: 'publish',
-            content: buildContent2(item)
-        };
+    let categories = matchCategories(item.categories);
+    if (categories == null || categories == '') {
+        console.log('Categories not match.')
+        return null;
+    }
+    return post = {
+        title: categories + "《" + item.title + "》解说文案/片源下载",
+        categories: [categoriesMap.get(categories)],
+        status: 'publish',
+        content: buildContent2(item)
+    };
 }
 
 function buildContent2(item) {
-    content += imageTemplate.replace('IMAGE_PLACEHOLDER', item.imageUrl);
+    let content = '';
+    content += imageTemplate.replace('IMAGE_PLACEHOLDER', item.image_url);
     content += item.desc;
     content += hideTitleTemplate;
-    content += hideContentTemplate.replace('DOCX_PLACEHOLDER', item.docUrl).replace('MOVIE_PLACEHOLDER', item.movie_url);
+    content += hideContentTemplate.replace('DOCX_PLACEHOLDER', item.fileUrl).replace('MOVIE_PLACEHOLDER', item.movie_url);
     return content;
+}
+
+/**
+ * 发布文章
+ * @param {*} post 
+ */
+function publishPostInternal(post, callback) {
+    if (post == null || post.content == null) {
+        console.log('post content is null, skip.');
+        callback(false);
+    } else {
+        wp.posts().create(post).then(function (response) {
+            console.log('id:' + response.id + ', status:' + response.status);
+            callback(true);
+        }).catch(error => {
+            console.log(error);
+            callback(false);
+        })
+    }
 }
 
 /**
@@ -166,6 +217,7 @@ function buildContent(item, callback) {
  * @param {*} callback 
  */
 function publishMedia(file, callback) {
+    console.log('Uploading ' + file);
     wp.media().file(file).create().then(function (response) {
         callback(response.source_url);
     }).catch(error => {
@@ -174,24 +226,63 @@ function publishMedia(file, callback) {
     })
 }
 
-/**
- * 发布文章
- * @param {*} post 
- */
-function publishPostInternal(post, callback) {
-    if (post.content == null) {
-        console.log('post content is null, skip.');
-        callback(false);
-    } else {
-        wp.posts().create(post).then(function (response) {
-            console.log('id:' + response.id + ', status:' + response.status);
-            callback(true);
-        }).catch(error => {
-            console.log(error);
-            callback(false);
+async function fetchAllPostTitles(callback) {
+    console.log("Fetching all post titles...");
+    try {
+        for (let i = 1; i < 10000; i++) {
+            console.log("-----page:" + i);
+            let data = await fetchPostTitlesPerPage(i);
+            if (data != null) {
+                for(let j = 0; j<data.length; j++) {
+                    let title = data[j].title.rendered;
+                    let movieName = title.substring(title.indexOf("《") + 1, title.indexOf("》"));
+                    postTitlesSet.add(movieName);
+                }
+            }
+        }
+    } catch (e) {
+        console.log("Fetching all post titles done.");
+        callback();
+        let content = "";
+        for(let name of postTitlesSet) {
+            content += name + "\n";
+        }
+        fs.writeFile("posts.txt", content, function(err) {
+            if (err) throw err;
         })
     }
 }
 
+async function fetchPostTitlesPerPage(page) {
+    return new Promise((resolve, reject) => {
+        wp.posts().perPage(100).page(page).then(function (data) {
+            resolve(data);
+        }).catch((err) => {
+            reject(err);
+        })
+    })
+}
+
+function matchCategories(categories) {
+    for(let key of categoriesMap.keys()) {
+        let array = categories.split('/');
+        if (array == null || array.length == 0) {
+            return '';
+        }
+        for(let i=0; i<array.length; i++) {
+            if (key.includes(array[i])){
+                return key;
+            }
+        }
+    }
+    return '';
+}
+
+
+
 module.exports.createWpApi = createWpApi
 module.exports.startPublish = startPublish
+module.exports.fetchAllPostTitles = fetchAllPostTitles
+module.exports.matchCategories = matchCategories
+module.exports.fetchCategories = fetchCategories
+module.exports.buildcontent2 = buildContent2

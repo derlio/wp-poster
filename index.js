@@ -1,46 +1,43 @@
 #!/usr/bin/env node
+
 const lib = require('./lib.js')
 const fs = require('fs')
 const readline = require('readline')
 const process = require('process')
 
-var itemsFilePath = 'output/items.json'
+var itemsFilePath = '/Users/Derlio/Develop/Github/private/wppublish/item.json'
 
 
 /**
  * 读取wp后台用户名密码
  */
 function readUsernameAndPwd() {
-    console.log('Input your username and password');
-    let rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
+    fs.readFile('account.conf', 'utf-8', (err, data) => {
+        if (err) throw err;
+        let config = JSON.parse(data);
+        lib.createWpApi(config.username, config.password);
+        lib.fetchAllPostTitles(() => {
+            loadItems2();
+        });
     });
-    rl.question('Username:', function (username) {
-        if (username == null || username.length == 0) {
-            console.log('Username can not be empty.')
-            process.exit(1);
-        } else {
-            rl.question('Password:', function (password) {
-                if (password == null || password.length == 0) {
-                    console.log('Password can not be empty.')
-                    process.exit(1);
-                } else {
-                    lib.createWpApi(username, password);
-                    loadItems(function (items) {
-                        console.log('readlines: ' + items.length);
-                        lib.startPublish(items);
-                    });
-                }
-            })
-        }
-    });
+}
 
+function loadItems2() {
+    fs.readFile(itemsFilePath, 'utf-8', function (err, data) {
+        if (err) {
+            throw err;
+        }
+        lib.fetchCategories(() => {
+            let items = JSON.parse(data);
+            lib.startPublish(items);
+        })
+    })
 }
 
 /**
  * 加载本地数据
  * @param {*} callback 
+ * @deprecated
  */
 function loadItems(callback) {
 
