@@ -3,13 +3,13 @@ const fs = require('fs');
 const { title } = require('process');
 
 // 文章内容模板
-const imageTemplate = '<img class="alignnone size-full" src="IMAGE_PLACEHOLDER" />';
+const imageTemplate = '<img class="alignnone size-full" src="IMAGE_PLACEHOLDER" /><br/>';
 const hideTitleTemplate = '<strong><span style="color: #ff0000;">完整解说文案（word文档）、影片下载地址请查看附件↓↓↓</span></strong>'
-const hideContentTemplate = '<strong>[rihide] </strong>' +
+const hideContentTemplate = '[rihide]' +
     '<strong>解说文案：<a href="DOCX_PLACEHOLDER">下载链接</a> </strong>' +
     '<p></p>' +
-    '<strong><strong>影片迅雷下载链接：<a href="MOVIE_PLACEHOLDER">下载链接</a></strong></strong>' +
-    '<strong>[/rihide]</strong>';
+    '<strong>影片迅雷下载链接：<a href="MOVIE_PLACEHOLDER">下载链接</a></strong>' +
+    '[/rihide]';
 
 const WP_ENDPOINT = "http://www.99jieshuo.com//wp-json";
 
@@ -76,17 +76,31 @@ function prepareNextPost() {
             return;
         }
         item.fileUrl = url;
-        publishPost(item, function (success) {
-            if (!success) {
-                console.log(item.title + " publish failed.");
-            }
+
+        let image_url = item.image_url;
+        let image_file = 'images2/' + image_url.substring(image_url.lastIndexOf('/') + 1, image_url.lastIndexOf('.')) + '.png';
+        if (!fs.existsSync(image_file)) {
+            console.log('Image file not found, slip.');
             prepareNextPost();
-        });
+            return;
+        }
+        publishMedia(image_file, function(url){
+            item.image_url = url;
+            publishPost(item, function (success) {
+                if (!success) {
+                    console.log(item.title + " publish failed.");
+                }
+                console.log('Publishing post done.');
+
+                prepareNextPost();
+            });
+        })
     })
     
 }
 
 function publishPost(item, callback) {
+    console.log('Publishing post: ' + item.title);
     if (categoriesMap.size > 0) {
         publishPostInternal(buildPost(item), callback);
     } else {
@@ -134,7 +148,7 @@ function buildPost(item) {
 function buildContent2(item) {
     let content = '';
     content += imageTemplate.replace('IMAGE_PLACEHOLDER', item.image_url);
-    content += item.desc;
+    content += item.desc + '<br/>';
     content += hideTitleTemplate;
     content += hideContentTemplate.replace('DOCX_PLACEHOLDER', item.fileUrl).replace('MOVIE_PLACEHOLDER', item.movie_url);
     return content;

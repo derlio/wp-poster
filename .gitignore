@@ -2,3 +2,6 @@ node_modules
 item.json
 account.conf
 zips
+images
+images2
+.DS_Store

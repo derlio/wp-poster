@@ -5,7 +5,7 @@ const fs = require('fs')
 const readline = require('readline')
 const process = require('process')
 
-var itemsFilePath = '/Users/Derlio/Develop/Github/private/wppublish/item.json'
+var itemsFilePath = '/Users/derlio/Develop/private/jsspace/wppublish/item.json'
 
 
 /**
